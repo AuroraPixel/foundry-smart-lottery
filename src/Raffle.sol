@@ -6,6 +6,7 @@ import {VRFV2PlusClient} from "@chainlink/contracts/v0.8/vrf/dev/libraries/VRFV2
 
 error Raffle__NotEnoughEthEntered();
 error Raffle_TransferFailed();
+error Raffle_RaffleNotOpen();
 
 /**
  * @title  A sample Raffle Contract
@@ -14,9 +15,15 @@ error Raffle_TransferFailed();
  * @dev It implements Chainlink VRFv2.5 and Chainlink Automation
  */
 contract Raffle is VRFConsumerBaseV2Plus {
+    /* Type Declarations */
+    enum RaffleState {
+        OPEN,
+        CALCULATING
+    }
+
+    /* State Variables */
     uint16 private constant REQUEST_CONFIRMATONS = 3;
     uint32 private constant NUM_WORDS = 1;
-
     uint256 private immutable i_entranceFee;
     // @dev The duration of the lottery in seconds
     uint256 private immutable i_interval;
@@ -26,6 +33,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
     address payable[] private s_players;
     address payable private s_recentWinner;
     uint256 private s_lastTimeStamp;
+    RaffleState private s_raffleState;
 
     /* Events */
     event RaffleEntered(address indexed player);
@@ -44,11 +52,15 @@ contract Raffle is VRFConsumerBaseV2Plus {
         i_subscriptionId = subscriptionId;
         s_lastTimeStamp = block.timestamp;
         i_callbackGasLimit = callbackGasLimit;
+        s_raffleState = RaffleState.OPEN;
     }
 
     function enterRaffle() external payable {
         if (msg.value < i_entranceFee) {
             revert Raffle__NotEnoughEthEntered();
+        }
+        if (s_raffleState != RaffleState.OPEN) {
+            revert Raffle_RaffleNotOpen();
         }
         s_players.push(payable(msg.sender));
         emit RaffleEntered(msg.sender);
@@ -62,6 +74,9 @@ contract Raffle is VRFConsumerBaseV2Plus {
         if (block.timestamp - s_lastTimeStamp < i_interval) {
             revert();
         }
+
+        s_raffleState = RaffleState.CALCULATING;
+
         // get our random number from chainlink VRF
         VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest({
             keyHash: i_keyHash,
@@ -78,6 +93,8 @@ contract Raffle is VRFConsumerBaseV2Plus {
         uint256 indexOfWinner = randomWords[0] % s_players.length;
         address payable winner = s_players[indexOfWinner];
         s_recentWinner = winner;
+        s_players = new address
+        s_raffleState = RaffleState.OPEN;
         (bool success,) = winner.call{value: address(this).balance}("");
         if (!success) {
             revert Raffle_TransferFailed();
